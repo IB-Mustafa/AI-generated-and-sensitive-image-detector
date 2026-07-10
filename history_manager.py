@@ -1,46 +1,59 @@
 """
 history_manager.py
 ------------------
-Handles reading / writing scan history to a local JSON file.
-No database needed — flat list stored in history.json.
+Handles reading / writing scan history to a local SQLite database.
+Replaces the flat JSON file used in v1.
 """
 
 import json
 import os
+import sqlite3
 from datetime import datetime
 
-HISTORY_FILE = os.path.join(os.path.dirname(__file__), "history.json")
+_DIR         = os.path.dirname(__file__)
+HISTORY_DB   = os.path.join(_DIR, "history.db")
+HISTORY_FILE = os.path.join(_DIR, "history.json")   # legacy — migration only
 
 
-def _load_raw() -> list:
-    if not os.path.isfile(HISTORY_FILE):
-        return []
-    try:
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, OSError):
-        return []
+# =============================================================================
+# DB SETUP
+# =============================================================================
+def _get_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(HISTORY_DB)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
-def _save_raw(records: list) -> None:
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(records, f, indent=2, ensure_ascii=False)
+def _init_db() -> None:
+    with _get_conn() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS scans (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                name           TEXT,
+                path           TEXT,
+                timestamp      TEXT,
+                overall_risk   TEXT,
+                authentic      INTEGER,
+                ai_score       REAL,
+                deepfake_score REAL,
+                sensitive      TEXT
+            )
+        """)
+        conn.commit()
 
 
+_init_db()
+
+# =============================================================================
+# PUBLIC API
+# =============================================================================
 def add_record(image_path: str, results: dict) -> None:
-    """
-    Append one scan result to history.json.
-    Stored fields: name, path, timestamp, overall_risk, authentic,
-                   ai_score, deepfake_score, sensitive
-    """
-    records = _load_raw()
-
+    """Append one scan result to the database."""
     deepfake       = results.get("deepfake", {})
     ai_score       = deepfake.get("ai_score")
     deepfake_score = deepfake.get("deepfake_score")
 
-    # Strip 'reason' from sensitive dict before saving (keeps file clean)
+    # Strip 'reason' before saving
     sensitive_clean = {}
     for cat, info in results.get("sensitive", {}).items():
         sensitive_clean[cat] = {
@@ -48,38 +61,51 @@ def add_record(image_path: str, results: dict) -> None:
             "score":       info.get("score", 0.0),
         }
 
-    record = {
-        "name":           os.path.basename(image_path),
-        "path":           image_path,
-        "timestamp":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "overall_risk":   results.get("overall_risk", "Low"),
-        "authentic":      results.get("authentic", True),
-        "ai_score":       ai_score,
-        "deepfake_score": deepfake_score,
-        "sensitive":      sensitive_clean,
-    }
-
-    records.insert(0, record)   # newest first
-    records = records[:200]     # keep at most 200 entries
-    _save_raw(records)
+    with _get_conn() as conn:
+        conn.execute("""
+            INSERT INTO scans
+            (name, path, timestamp, overall_risk, authentic,
+             ai_score, deepfake_score, sensitive)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            os.path.basename(image_path),
+            image_path,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            results.get("overall_risk", "Low"),
+            1 if results.get("authentic", True) else 0,
+            ai_score,
+            deepfake_score,
+            json.dumps(sensitive_clean),
+        ))
+        conn.commit()
 
 
 def get_all_records() -> list:
     """Return all history records, newest first."""
-    return _load_raw()
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM scans ORDER BY id DESC"
+        ).fetchall()
+
+    records = []
+    for r in rows:
+        record = dict(r)
+        record["authentic"] = bool(record["authentic"])
+        record["sensitive"] = json.loads(record.get("sensitive") or "{}")
+        records.append(record)
+    return records
 
 
 def get_stats() -> dict:
-    """
-    Aggregate stats for the Dashboard cards.
-    Returns { total, ai_detected, sensitive, clean }
-    """
-    records      = _load_raw()
-    total        = len(records)
-    ai_detected  = sum(1 for r in records
-                       if r.get("ai_score") is not None and r["ai_score"] >= 50)
-    sensitive    = sum(1 for r in records if r.get("sensitive"))
-    clean        = sum(1 for r in records if r.get("authentic", False))
+    """Aggregate stats for Dashboard cards."""
+    with _get_conn() as conn:
+        total       = conn.execute("SELECT COUNT(*) FROM scans").fetchone()[0]
+        ai_detected = conn.execute(
+            "SELECT COUNT(*) FROM scans WHERE ai_score >= 50").fetchone()[0]
+        sensitive   = conn.execute(
+            "SELECT COUNT(*) FROM scans WHERE sensitive != '{}'").fetchone()[0]
+        clean       = conn.execute(
+            "SELECT COUNT(*) FROM scans WHERE authentic = 1").fetchone()[0]
 
     return {
         "total":       total,
@@ -91,4 +117,6 @@ def get_stats() -> dict:
 
 def clear_history() -> None:
     """Wipe all history."""
-    _save_raw([])
+    with _get_conn() as conn:
+        conn.execute("DELETE FROM scans")
+        conn.commit() 
