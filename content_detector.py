@@ -266,6 +266,9 @@ def _detect_distress(path: str) -> dict:
         H = 512
         face_cascade = _get_face_cascade()
 
+       # FIXME: Face detection currently skips entire distress check.
+       # Should exclude only face region, continue checking rest of image.
+
         if _has_frontal_face(gray):
             return {}
 
@@ -277,9 +280,7 @@ def _detect_distress(path: str) -> dict:
         if cv2.countNonZero(warm) / (H * H) > 0.005:
             return {}
         
-        
-# FIXME: Face detection currently skips entire distress check.
-# Should exclude only face region, continue checking rest of image.
+    
 
 
         # Bright background guard — well-lit scenes (offices, studios, daylight)
@@ -356,12 +357,12 @@ def _detect_weapon_in_hand(path: str) -> dict:
     try:
         _, hsv, gray = loaded
 
+        # FIXME: Face detection currently skips entire weapon check.
+        # Should exclude only face region, continue checking hand areas.
+
         if _has_frontal_face(gray):
             return {}
         
-# FIXME: Face detection currently skips entire weapon check.
-# Should exclude only face region, continue checking hand areas.
-
         skin_mask  = cv2.inRange(hsv, np.array([0,  20, 70]), np.array([20,  255, 255]))
         metal_mask = cv2.inRange(hsv, np.array([0,   0, 70]), np.array([180,  30, 220]))
         dark_mask  = cv2.inRange(hsv, np.array([0,   0,  0]), np.array([180,  50,  80]))
@@ -532,7 +533,11 @@ def _detect_yolo_objects(path: str) -> dict:
                 }
             }
 
-        # person context
+        # person context 
+        # TODO: threshold manually set to 12 needs testing on crowd images 
+        # TODO: person count alone is not a reliable threat signal.
+        # Should only flag crowd scenes when combined with blood, fire, or weapon detection.
+
         if detected.count("person") >= 12:
             return {
                 "Scene Context": {
@@ -562,16 +567,16 @@ def _detect_text_risk(path: str) -> dict:
 
         # simple regex flags (customize)
         patterns = [
-            r"\b kill \b",
-            r"\b hate \b",
-            r"\b bomb \b",
-            r"\b attack \b",
-            r"\b terror \b",
-            r"\b weapon \b",
-            r"\b gun \b",
-            r"\b knife \b",
-            r"\b drugs \b",
-            r"\b violence \b",
+            r"\bkill\b",
+            r"\bhate\b",
+            r"\bbomb\b",
+            r"\battack\b",
+            r"\bterror\b",
+            r"\bweapon\b",
+            r"\bgun\b",
+            r"\bknife\b",
+            r"\bdrugs\b",
+            r"\bviolence\b",
         ]
 
         for p in patterns:
