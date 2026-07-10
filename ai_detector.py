@@ -354,7 +354,7 @@ def run_ai_detection(path: str) -> dict:
     try:
         from facenet_pytorch import MTCNN
         mtcnn = MTCNN(keep_all=False, post_process=False, device="cpu")
-        if mtcnn(img) is not None:
+        if mtcnn(img) is not None and ai_score > 50:
             deepfake_score = ai_score
     except Exception:
         pass

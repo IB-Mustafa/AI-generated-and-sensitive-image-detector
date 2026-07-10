@@ -27,7 +27,7 @@ class App(ctk.CTk):
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     def _build_sidebar(self):
-        sidebar = ctk.CTkFrame(self, width=200, fg_color="#0a0f1a", corner_radius=0)
+        sidebar = ctk.CTkFrame(self, width=270, fg_color="#0a0f1a", corner_radius=0)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 

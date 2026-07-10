@@ -1,4 +1,4 @@
-# 
+#
 try:
     from nudenet import NudeDetector as _NnetDetector
     nnet_instance = _NnetDetector()

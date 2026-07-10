@@ -1,30 +1,3 @@
-"""
-analyze.py — DeepScanAI
-Renders the Analyze tab.
-
-ROOT CAUSE OF BLANK SCREEN:
-  CTkScrollableFrame uses an internal canvas that requires the parent to
-  have a non-zero size at creation time. If it's built before the window
-  geometry is finalised (common on first tab switch), the canvas stays 0x0
-  and nothing renders — even with after() delays.
-
-FIX:
-  Replace CTkScrollableFrame with a plain tkinter Canvas + Scrollbar.
-  This is geometry-independent: the canvas resizes via <Configure> binding
-  and always renders correctly regardless of when it is created.
-
-Other fixes:
-  - Image blurred when max sensitivity score > 50%
-  - "Why" reason shown in each sensitive card
-  - Thread safety: UI updates via .after() on main thread only
-  - "Analyze Another Image" only clears inner_frame children — never the canvas
-
-Banner color logic:
-  🔴 Red    — sensitive / harmful content detected
-  🩷 Pink   — AI-generated only (not harmful)
-  🟢 Green  — all clear / authentic
-"""
-
 import threading
 import tkinter as tk
 import customtkinter as ctk

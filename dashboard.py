@@ -32,6 +32,8 @@ class DashboardView:
             inner, text="✨ AI-POWERED DETECTION",
             text_color="#00f2ff", font=ctk.CTkFont(size=11, weight="bold")
         ).pack(anchor="w")
+        
+
 
         ctk.CTkLabel(
             inner,
@@ -47,6 +49,7 @@ class DashboardView:
             font=ctk.CTkFont(weight="bold"),
             command=self.navigate_to_analyze
         ).pack(anchor="w", pady=(20, 0))
+
 
         # ── Stats Cards ──────────────────────────────────────────────────────
         stats_frame = ctk.CTkFrame(self.container, fg_color="transparent")

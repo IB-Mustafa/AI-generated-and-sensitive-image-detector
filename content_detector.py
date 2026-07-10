@@ -43,7 +43,7 @@ import re
 
 
 import numpy as np
-import Nnet as _FL
+import Nnet as _ND
 
 # ── OpenCV ────────────────────────────────────────────────────────────────────
 try:
@@ -53,9 +53,8 @@ except ImportError:
     CV2_OK = False
     print("[content_detector] OpenCV not available — visual detection disabled")
 
-# ── Nnet — content safety classifier (loaded via _flagged_labels) ─────────────
-_nnet  = _FL.nnet_instance
-NNET_OK = _FL.NNET_AVAILABLE
+_nnet  = _ND.nnet_instance
+NNET_OK = _ND.NNET_AVAILABLE
 
 _NNET_MAP = {
     "GUN_POINTED":              ("Restricted Item",  "Firearm — Directed at Subject",     65.0),
@@ -277,6 +276,11 @@ def _detect_distress(path: str) -> dict:
         warm = cv2.inRange(hsv, np.array([5, 80, 180]), np.array([35, 255, 255]))
         if cv2.countNonZero(warm) / (H * H) > 0.005:
             return {}
+        
+        
+# FIXME: Face detection currently skips entire distress check.
+# Should exclude only face region, continue checking rest of image.
+
 
         # Bright background guard — well-lit scenes (offices, studios, daylight)
         # are never threatening. Skip if >40% pixels are bright.
@@ -354,6 +358,9 @@ def _detect_weapon_in_hand(path: str) -> dict:
 
         if _has_frontal_face(gray):
             return {}
+        
+# FIXME: Face detection currently skips entire weapon check.
+# Should exclude only face region, continue checking hand areas.
 
         skin_mask  = cv2.inRange(hsv, np.array([0,  20, 70]), np.array([20,  255, 255]))
         metal_mask = cv2.inRange(hsv, np.array([0,   0, 70]), np.array([180,  30, 220]))
@@ -456,10 +463,10 @@ def _detect_fire_smoke(path: str) -> dict:
         if is_candle:
             return {}
 
-        min_flame    = 0.04 if dark_ratio >= 0.60 else 0.13
+        min_NDame    = 0.04 if dark_ratio >= 0.60 else 0.13
         large_single = concentration > 0.80 and largest_blob > 8000
         multi_blob   = sum(1 for a in flame_areas if a > 1200) >= 2
-        has_flame    = flame_ratio > min_flame and (large_single or multi_blob)
+        has_NDame    = flame_ratio > min_NDame and (large_single or multi_blob)
 
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
         smoke  = cv2.morphologyEx(
@@ -470,14 +477,14 @@ def _detect_fire_smoke(path: str) -> dict:
         smoke_ratio   = cv2.countNonZero(smoke) / (H * H)
         has_smoke     = large_smoke >= 2 and smoke_ratio > 0.08
 
-        if not has_flame and not has_smoke:
+        if not has_NDame and not has_smoke:
             return {}
 
-        if has_flame and has_smoke:
+        if has_NDame and has_smoke:
             sub    = "Active Fire with Smoke Plume"
             score  = round(min(60.0 + flame_ratio * 800 + smoke_ratio * 200, 88.0), 1)
             reason = f"Flame ({flame_ratio*100:.1f}%) and smoke ({smoke_ratio*100:.1f}%) detected"
-        elif has_flame:
+        elif has_NDame:
             sub    = "Active Flame Detected"
             score  = round(min(50.0 + flame_ratio * 900, 82.0), 1)
             reason = f"Fire signature covers {flame_ratio*100:.1f}% of frame"
@@ -510,7 +517,7 @@ def _detect_yolo_objects(path: str) -> dict:
             conf   = float(box.conf[0])
             label  = classes[cls_id]
 
-            if conf < 0.30:
+            if conf < 0.45:
                 continue
 
             detected.append(label)
@@ -526,11 +533,11 @@ def _detect_yolo_objects(path: str) -> dict:
             }
 
         # person context
-        if detected.count("person") >= 2:
+        if detected.count("person") >= 12:
             return {
                 "Scene Context": {
                     "subcategory": "Multiple Persons Detected",
-                    "score": 40.0,
+                    "score": 20.0,
                     "reason": "Multiple people in frame — possible interaction"
                 }
             }
@@ -555,16 +562,16 @@ def _detect_text_risk(path: str) -> dict:
 
         # simple regex flags (customize)
         patterns = [
-            r"\bkill\b",
-            r"\bhate\b",
-            r"\bbomb\b",
-            r"\battack\b",
-            r"\bterror\b",
-            r"\bweapon\b",
-            r"\bgun\b",
-            r"\bknife\b",
-            r"\bdrugs\b",
-            r"\bviolence\b",
+            r"\b kill \b",
+            r"\b hate \b",
+            r"\b bomb \b",
+            r"\b attack \b",
+            r"\b terror \b",
+            r"\b weapon \b",
+            r"\b gun \b",
+            r"\b knife \b",
+            r"\b drugs \b",
+            r"\b violence \b",
         ]
 
         for p in patterns:
